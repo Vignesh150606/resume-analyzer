@@ -1,56 +1,61 @@
 import sys
-import json
 sys.path.insert(0, ".")
 
-from backend.core.pdf_parser import extract_text_from_pdf, extract_sections, PDFParsingError
+from backend.core.pdf_parser import extract_text_from_pdf
+from backend.core.extractor import extract_skills, compare_skills, extract_experience_years
 
-def test_extraction():
+# Sample job description for testing
+SAMPLE_JD = """
+We are looking for a Python Backend Developer.
+
+Requirements:
+- 1-2 years of experience with Python and FastAPI or Django
+- Strong knowledge of SQL and PostgreSQL
+- Experience with REST APIs and Git
+- Familiarity with Docker and AWS is a plus
+- Understanding of Data Structures and Algorithms
+- Knowledge of Machine Learning or NLP is a bonus
+
+Education: B.Tech or B.E in any engineering discipline
+"""
+
+def test_extractor():
     print("=" * 60)
-    print("TEST 1: Basic extraction")
+    print("TEST 1: Extract skills from YOUR resume")
     print("=" * 60)
-    
-    try:
-        result = extract_text_from_pdf("sample_data/sample_resume.pdf")
-        
-        print(f"Pages found     : {result['page_count']}")
-        print(f"Characters found: {result['char_count']}")
-        print(f"\nFirst 500 characters of extracted text:")
-        print("-" * 40)
-        print(result['full_text'][:500])
-        print("-" * 40)
-        
-    except PDFParsingError as e:
-        print(f"PDFParsingError: {e}")
-        return
+
+    result = extract_text_from_pdf("sample_data/sample_resume.pdf")
+    resume_skills = extract_skills(result["full_text"])
+
+    print(f"Total skills found in resume: {resume_skills['skill_count']}")
+    print(f"All skills: {resume_skills['all_skills']}")
+    print(f"\nBy category:")
+    for cat, skills in resume_skills["by_category"].items():
+        print(f"  {cat}: {skills}")
 
     print("\n")
     print("=" * 60)
-    print("TEST 2: Section detection")
+    print("TEST 2: Extract skills from Job Description")
     print("=" * 60)
-    
-    sections = extract_sections(result['full_text'])
-    print(f"Sections detected: {list(sections.keys())}")
-    
-    for section_name, content in sections.items():
-        print(f"\n[{section_name.upper()}]")
-        print(content[:200])
+
+    jd_skills = extract_skills(SAMPLE_JD)
+    print(f"Total skills in JD: {jd_skills['skill_count']}")
+    print(f"JD requires: {jd_skills['all_skills']}")
+
+    exp_years = extract_experience_years(SAMPLE_JD)
+    print(f"Experience required: {exp_years} years")
 
     print("\n")
     print("=" * 60)
-    print("TEST 3: Error handling")
+    print("TEST 3: Compare resume vs JD")
     print("=" * 60)
-    
-    try:
-        extract_text_from_pdf("nonexistent.pdf")
-    except PDFParsingError as e:
-        print(f"Correctly caught missing file: {e}")
-    
-    try:
-        extract_text_from_pdf("requirements.txt")
-    except PDFParsingError as e:
-        print(f"Correctly caught wrong file type: {e}")
 
-    print("\nAll tests passed.")
+    comparison = compare_skills(resume_skills, jd_skills)
+    print(f"Match percentage : {comparison['match_percentage']}%")
+    print(f"Matched skills   : {comparison['matched_skills']}")
+    print(f"Missing skills   : {comparison['missing_skills']}")
+    print(f"Extra skills     : {comparison['extra_skills']}")
 
 if __name__ == "__main__":
-    test_extraction()
+    test_extractor()
+    
