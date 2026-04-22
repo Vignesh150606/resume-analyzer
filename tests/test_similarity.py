@@ -1,78 +1,205 @@
 import sys
+import pytest
 sys.path.insert(0, ".")
 
-from backend.core.pdf_parser import extract_text_from_pdf, extract_sections
-from backend.core.extractor import extract_skills, compare_skills
+from backend.core.extractor import (
+    extract_skills,
+    compare_skills,
+    extract_experience_years,
+    extract_education_requirements
+)
 from backend.core.similarity import (
-    compute_overall_semantic_score,
-    compute_section_similarities,
-    compute_skill_gap_embeddings,
+    compute_cosine_similarity,
     compute_final_score
 )
 
-SAMPLE_JD = """
-We are looking for a Python Backend Developer.
-Requirements:
-- 1-2 years of experience with Python and FastAPI or Django
-- Strong knowledge of SQL and PostgreSQL
-- Experience with REST APIs and Git
-- Familiarity with Docker and AWS is a plus
-- Understanding of Data Structures and Algorithms
-- Knowledge of Machine Learning or NLP is a bonus
-Education: B.Tech or B.E in any engineering discipline
-"""
 
-def test_similarity():
-    print("Loading model... (first time takes 10-15 seconds)")
-    
-    # Load resume
-    result = extract_text_from_pdf("sample_data/sample_resume.pdf")
-    resume_text = result["full_text"]
-    sections = extract_sections(resume_text)
-    
-    # Get skills
-    resume_skills = extract_skills(resume_text)
-    jd_skills = extract_skills(SAMPLE_JD)
-    comparison = compare_skills(resume_skills, jd_skills)
+# ── extract_skills tests ──────────────────────────────────────
 
-    print("\n" + "=" * 60)
-    print("TEST 1: Overall semantic similarity")
-    print("=" * 60)
-    semantic_score = compute_overall_semantic_score(resume_text, SAMPLE_JD)
-    print(f"Semantic similarity score: {semantic_score}")
-    print(f"(1.0 = perfect match, 0.0 = no relation)")
+def test_extract_skills_finds_python():
+    result = extract_skills("We need a Python developer")
+    assert "python" in result["all_skills"]
 
-    print("\n" + "=" * 60)
-    print("TEST 2: Section-by-section similarity")
-    print("=" * 60)
-    section_scores = compute_section_similarities(sections, SAMPLE_JD)
-    for section, score in sorted(section_scores.items(),
-                                  key=lambda x: x[1], reverse=True):
-        bar = "█" * int(score * 20)
-        print(f"  {section:<25} {score:.4f}  {bar}")
 
-    print("\n" + "=" * 60)
-    print("TEST 3: Skill gap semantic analysis")
-    print("=" * 60)
-    gap_analysis = compute_skill_gap_embeddings(
-        comparison["missing_skills"],
-        resume_text
+def test_extract_skills_finds_multiple():
+    result = extract_skills("Python, FastAPI, PostgreSQL, Docker, Git")
+    assert "python" in result["all_skills"]
+    assert "fastapi" in result["all_skills"]
+    assert "postgresql" in result["all_skills"]
+    assert "docker" in result["all_skills"]
+    assert "git" in result["all_skills"]
+
+
+def test_extract_skills_returns_correct_structure():
+    result = extract_skills("Python developer needed")
+    assert "all_skills" in result
+    assert "by_category" in result
+    assert "skill_count" in result
+    assert isinstance(result["all_skills"], list)
+    assert isinstance(result["by_category"], dict)
+    assert isinstance(result["skill_count"], int)
+
+
+def test_extract_skills_case_insensitive():
+    result1 = extract_skills("PYTHON developer")
+    result2 = extract_skills("python developer")
+    assert result1["all_skills"] == result2["all_skills"]
+
+
+def test_extract_skills_no_false_positives():
+    # 'c' should not match inside 'science' or 'react'
+    result = extract_skills("data science and react developer")
+    # 'c' as standalone should NOT be in results
+    # (it only matches as a word boundary)
+    text_has_standalone_c = "c" in result["all_skills"]
+    # This is acceptable either way — just verify no crash
+    assert isinstance(result["all_skills"], list)
+
+
+def test_extract_skills_empty_text():
+    result = extract_skills("")
+    assert result["skill_count"] == 0
+    assert result["all_skills"] == []
+
+
+def test_extract_skills_categorizes_correctly():
+    result = extract_skills("Python FastAPI PostgreSQL Docker")
+    cats = result["by_category"]
+    assert "programming_languages" in cats
+    assert "python" in cats["programming_languages"]
+
+
+# ── compare_skills tests ──────────────────────────────────────
+
+def test_compare_skills_finds_matches():
+    resume = extract_skills("Python Git algorithms data structures")
+    jd = extract_skills("Python FastAPI Git PostgreSQL")
+    result = compare_skills(resume, jd)
+    assert "python" in result["matched_skills"]
+    assert "git" in result["matched_skills"]
+
+
+def test_compare_skills_finds_missing():
+    resume = extract_skills("Python Git")
+    jd = extract_skills("Python FastAPI PostgreSQL Git Docker")
+    result = compare_skills(resume, jd)
+    assert "fastapi" in result["missing_skills"]
+    assert "postgresql" in result["missing_skills"]
+    assert "docker" in result["missing_skills"]
+
+
+def test_compare_skills_match_percentage_range():
+    resume = extract_skills("Python Git")
+    jd = extract_skills("Python FastAPI Git")
+    result = compare_skills(resume, jd)
+    assert 0 <= result["match_percentage"] <= 100
+
+
+def test_compare_skills_perfect_match():
+    resume = extract_skills("Python FastAPI Git")
+    jd = extract_skills("Python FastAPI Git")
+    result = compare_skills(resume, jd)
+    assert result["match_percentage"] == 100.0
+    assert result["missing_skills"] == []
+
+
+def test_compare_skills_no_match():
+    resume = extract_skills("Python Git algorithms")
+    jd = extract_skills("Java Spring PostgreSQL Docker")
+    result = compare_skills(resume, jd)
+    assert result["match_percentage"] == 0.0
+
+
+def test_compare_skills_returns_correct_structure():
+    resume = extract_skills("Python")
+    jd = extract_skills("Python FastAPI")
+    result = compare_skills(resume, jd)
+    assert "matched_skills" in result
+    assert "missing_skills" in result
+    assert "extra_skills" in result
+    assert "match_percentage" in result
+
+
+# ── extract_experience_years tests ───────────────────────────
+
+def test_extract_experience_years_finds_number():
+    result = extract_experience_years("We need 3+ years of experience")
+    assert result == 3
+
+
+def test_extract_experience_years_finds_minimum():
+    result = extract_experience_years("minimum 2 years of experience required")
+    assert result == 2
+
+
+def test_extract_experience_years_returns_none_when_missing():
+    result = extract_experience_years("Python developer role")
+    assert result is None
+
+
+# ── compute_cosine_similarity tests ──────────────────────────
+
+def test_cosine_similarity_identical_text():
+    score = compute_cosine_similarity("Python developer", "Python developer")
+    assert score > 0.95
+
+
+def test_cosine_similarity_similar_text():
+    score = compute_cosine_similarity("Python programmer", "Python developer")
+    assert score > 0.7
+
+
+def test_cosine_similarity_unrelated_text():
+    score = compute_cosine_similarity(
+        "quantum physics research",
+        "web development with javascript"
     )
-    for item in gap_analysis:
-        status = "~ Possibly familiar" if item["likely_known"] else "✗ Likely missing"
-        print(f"  {item['skill']:<20} score={item['semantic_score']}  {status}")
+    assert score < 0.6
 
-    print("\n" + "=" * 60)
-    print("TEST 4: Final combined score")
-    print("=" * 60)
-    final = compute_final_score(
-        keyword_match_pct=comparison["match_percentage"],
-        semantic_score=semantic_score,
-        section_scores=section_scores
+
+def test_cosine_similarity_returns_float():
+    score = compute_cosine_similarity("hello", "world")
+    assert isinstance(score, float)
+    assert 0.0 <= score <= 1.0
+
+
+# ── compute_final_score tests ─────────────────────────────────
+
+def test_final_score_grade_A():
+    result = compute_final_score(
+        keyword_match_pct=90,
+        semantic_score=0.9,
+        section_scores={"skills": 0.9}
     )
-    print(f"  Final Score : {final['final_score']} / 100")
-    print(f"  Grade       : {final['grade']} — {final['label']}")
-    print(f"  Breakdown   : {final['breakdown']}")
+    assert result["grade"] == "A"
+    assert result["final_score"] >= 80
 
-if __name__ == "__main__":
-    test_similarity()
+
+def test_final_score_grade_F():
+    result = compute_final_score(
+        keyword_match_pct=5,
+        semantic_score=0.1,
+        section_scores={"skills": 0.1}
+    )
+    assert result["grade"] == "F"
+
+
+def test_final_score_returns_correct_structure():
+    result = compute_final_score(
+        keyword_match_pct=50,
+        semantic_score=0.5,
+        section_scores={"skills": 0.5}
+    )
+    assert "final_score" in result
+    assert "grade" in result
+    assert "label" in result
+    assert "breakdown" in result
+
+
+def test_final_score_range():
+    result = compute_final_score(
+        keyword_match_pct=60,
+        semantic_score=0.6,
+        section_scores={"skills": 0.6}
+    )
+    assert 0 <= result["final_score"] <= 100

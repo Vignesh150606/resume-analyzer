@@ -6,11 +6,32 @@ st.set_page_config(
     page_title="AI Resume Analyzer",
     page_icon="📄",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"
 )
 
 # ── Constants ─────────────────────────────────────────────────
 API_URL = "http://localhost:8080"
+
+# ── Sidebar ───────────────────────────────────────────────────
+with st.sidebar:
+    st.header("💡 How It Works")
+    st.markdown("""
+    1. **Upload** your resume as PDF
+    2. **Paste** the job description
+    3. **Click** Analyze Resume
+    4. Get your **match score**, **skill gaps**, and **AI suggestions**
+    """)
+    st.markdown("---")
+    st.header("📌 Tips")
+    st.markdown("""
+    - Use a **digital PDF** (not scanned)
+    - Paste the **full** job description
+    - A score above **65** means good match
+    - Add **missing keywords** to your resume
+    - Tailor your resume for **each job**
+    """)
+    st.markdown("---")
+    st.caption("Built with FastAPI + Sentence Transformers + Google Gemini")
 
 # ── Custom CSS ────────────────────────────────────────────────
 st.markdown("""
@@ -75,7 +96,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ── display_results DEFINED FIRST ─────────────────────────────
+# ── display_results DEFINED BEFORE USE ────────────────────────
 def display_results(data: dict):
     """Render all analysis results in a clean, organized layout."""
 
@@ -85,29 +106,36 @@ def display_results(data: dict):
     grade = final["grade"]
 
     col1, col2, col3, col4 = st.columns(4)
-
     with col1:
-        st.metric(
-            label="Overall Score",
-            value=f"{final['final_score']}/100"
-        )
+        st.metric("Overall Score", f"{final['final_score']}/100")
     with col2:
-        st.metric(
-            label="Grade",
-            value=f"{grade} — {final['label']}"
-        )
+        st.metric("Grade", f"{grade} — {final['label']}")
     with col3:
-        st.metric(
-            label="Keyword Match",
-            value=f"{data['skill_comparison']['match_percentage']}%"
-        )
+        st.metric("Keyword Match", f"{data['skill_comparison']['match_percentage']}%")
     with col4:
-        st.metric(
-            label="Semantic Match",
-            value=f"{round(data['semantic_score'] * 100, 1)}%"
-        )
+        st.metric("Semantic Match", f"{round(data['semantic_score'] * 100, 1)}%")
 
     st.progress(float(final["final_score"]) / 100)
+
+    # Score breakdown
+    with st.expander("📈 Score Breakdown Details"):
+        breakdown = final.get("breakdown", {})
+        if breakdown:
+            st.markdown("**How your score was calculated:**")
+            col_a, col_b, col_c = st.columns(3)
+            with col_a:
+                kw = breakdown.get("keyword_match_contribution", 0)
+                st.metric("Keyword Match (40%)", f"{kw}/40")
+                st.progress(float(kw) / 40 if kw <= 40 else 1.0)
+            with col_b:
+                sem = breakdown.get("semantic_contribution", 0)
+                st.metric("Semantic Match (40%)", f"{sem}/40")
+                st.progress(float(sem) / 40 if sem <= 40 else 1.0)
+            with col_c:
+                sec = breakdown.get("section_contribution", 0)
+                st.metric("Section Score (20%)", f"{sec}/20")
+                st.progress(float(sec) / 20 if sec <= 20 else 1.0)
+
     st.markdown("---")
 
     left, right = st.columns([1, 1], gap="large")
@@ -142,9 +170,10 @@ def display_results(data: dict):
 
         st.markdown("---")
         st.subheader("📑 Section Relevance")
-        section_scores = data["section_scores"]
         for section, score in sorted(
-            section_scores.items(), key=lambda x: x[1], reverse=True
+            data["section_scores"].items(),
+            key=lambda x: x[1],
+            reverse=True
         ):
             st.markdown(f"**{section.title()}**")
             st.progress(float(score), text=f"{round(score * 100, 1)}%")
@@ -157,43 +186,57 @@ def display_results(data: dict):
         prob = llm["hiring_probability"].upper()
         prob_icon = {"HIGH": "🟢", "MEDIUM": "🟡", "LOW": "🔴"}.get(prob, "⚪")
         st.markdown(f"**Shortlisting Probability:** {prob_icon} {prob}")
-
         st.info(llm["overall_assessment"])
 
         st.markdown("**💪 Your Strengths:**")
         for strength in llm["top_strengths"]:
             st.markdown(f"✅ {strength}")
 
-        if llm["critical_gaps"] and llm["critical_gaps"] != ["No critical gaps detected"]:
+        gaps = llm.get("critical_gaps", [])
+        if gaps and gaps != ["No critical gaps detected"]:
             st.markdown("**⚠️ Critical Gaps:**")
-            for gap in llm["critical_gaps"]:
+            for gap in gaps:
                 st.markdown(f"❌ {gap}")
 
         st.markdown("---")
         st.subheader("💡 Improvement Suggestions")
 
         for suggestion in llm["improvement_suggestions"]:
-            priority = suggestion["priority"].lower()
+            priority = suggestion.get("priority", "medium").lower()
+            section = suggestion.get("section", "General")
+            issue = suggestion.get("issue", "")
+            fix = suggestion.get("suggestion", "")
+
+            if not section and not issue and not fix:
+                continue
+
             css_class = f"suggestion-{priority}"
-            priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(priority, "⚪")
+            priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(
+                priority, "⚪"
+            )
+            content_lines = [f"<strong>{priority_icon} {section}</strong>"]
+            if issue:
+                content_lines.append(f"<em>Issue:</em> {issue}")
+            if fix:
+                content_lines.append(f"<em>Fix:</em> {fix}")
+
             st.markdown(f"""
 <div class="{css_class}">
-    <strong>{priority_icon} {suggestion['section']}</strong><br>
-    <em>Issue:</em> {suggestion['issue']}<br>
-    <em>Fix:</em> {suggestion['suggestion']}
+    {'<br>'.join(content_lines)}
 </div>
 """, unsafe_allow_html=True)
 
     st.markdown("---")
 
     st.subheader("🔍 ATS Keywords to Add")
-    if llm["ats_keywords_to_add"]:
+    ats_keywords = llm.get("ats_keywords_to_add", [])
+    if ats_keywords:
         keywords_html = " ".join([
             f'<span class="skill-missing">{kw}</span>'
-            for kw in llm["ats_keywords_to_add"]
+            for kw in ats_keywords
         ])
         st.markdown(keywords_html, unsafe_allow_html=True)
-        st.caption("Add these exact keywords to your resume to pass ATS filters")
+        st.caption("Add these exact keywords to pass ATS filters")
     else:
         st.success("✅ Your resume contains the key ATS keywords for this role")
 
@@ -226,17 +269,20 @@ with col1:
     uploaded_file = st.file_uploader(
         "Choose your resume PDF",
         type=["pdf"],
-        help="Upload a digital PDF resume (not scanned)"
+        help="Upload a digital PDF (not scanned)"
     )
     if uploaded_file:
-        st.success(f"✅ Uploaded: {uploaded_file.name} ({uploaded_file.size / 1024:.1f} KB)")
+        st.success(
+            f"✅ Uploaded: {uploaded_file.name} "
+            f"({uploaded_file.size / 1024:.1f} KB)"
+        )
 
 with col2:
     st.subheader("📋 Job Description")
     job_description = st.text_area(
         "Paste the full job description here",
         height=200,
-        placeholder="We are looking for a Python Backend Developer with experience in FastAPI, PostgreSQL, REST APIs..."
+        placeholder="We are looking for a Python Backend Developer..."
     )
     jd_word_count = len(job_description.split()) if job_description else 0
     st.caption(f"{jd_word_count} words")
@@ -244,9 +290,9 @@ with col2:
 
 # ── Analyze Button ────────────────────────────────────────────
 st.markdown("---")
-col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
+_, col_btn, _ = st.columns([1, 1, 1])
 
-with col_btn2:
+with col_btn:
     analyze_clicked = st.button(
         "🔍 Analyze Resume",
         type="primary",

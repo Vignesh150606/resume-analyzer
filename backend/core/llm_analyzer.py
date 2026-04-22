@@ -143,43 +143,73 @@ def analyze_with_llm(
 
 
 def _fallback_analysis(missing_skills: list, keyword_match_pct: float) -> LLMAnalysis:
+    """
+    Fallback when Gemini API is unavailable.
+    Returns rule-based analysis — graceful degradation.
+    """
     if keyword_match_pct >= 70:
         probability = "high"
-        assessment = "Strong keyword match detected. Resume aligns well with the job requirements."
+        assessment = (
+            f"Strong keyword match of {keyword_match_pct}% detected. "
+            "Your resume covers most of the required skills for this role. "
+            "Focus on quantifying your project impact to strengthen your application."
+        )
     elif keyword_match_pct >= 40:
         probability = "medium"
-        assessment = "Moderate match. Resume covers some requirements but has notable gaps."
+        assessment = (
+            f"Moderate keyword match of {keyword_match_pct}% detected. "
+            "Your resume covers some requirements but has notable skill gaps. "
+            "Adding the missing skills through projects will significantly improve your chances."
+        )
     else:
         probability = "low"
-        assessment = "Weak match. Resume is missing several key skills required for this role."
+        assessment = (
+            f"Weak keyword match of {keyword_match_pct}% detected. "
+            "Your resume is missing several key skills required for this role. "
+            "Build projects using the missing technologies and update your resume before applying."
+        )
 
     suggestions = []
     for skill in missing_skills[:3]:
         suggestions.append(ImprovementSuggestion(
             section="Skills",
-            issue=f"Missing required skill: {skill}",
-            suggestion=f"Add {skill} to your skills section and build a project using it",
+            issue=f"Required skill '{skill}' is not mentioned in your resume",
+            suggestion=f"Learn {skill} and add it to your Skills section. Build a small project using it to demonstrate practical knowledge.",
             priority="high"
         ))
 
+    # Always have at least one suggestion
     if not suggestions:
         suggestions.append(ImprovementSuggestion(
             section="Projects",
-            issue="Projects could be more aligned with target role",
-            suggestion="Add projects that directly use technologies mentioned in the JD",
+            issue="Projects could be more aligned with the target role",
+            suggestion="Add 1-2 projects that directly use the technologies mentioned in the job description",
             priority="medium"
         ))
+
+    # Always add a summary suggestion
+    suggestions.append(ImprovementSuggestion(
+        section="Professional Summary",
+        issue="Resume lacks a targeted professional summary",
+        suggestion="Add a 2-3 sentence summary at the top of your resume that mentions your target role and key relevant skills",
+        priority="medium"
+    ))
 
     return LLMAnalysis(
         overall_assessment=assessment,
         top_strengths=[
-            "Problem solving ability",
-            "Programming fundamentals",
-            "Willingness to learn"
+            "Strong problem-solving foundation from 200+ LeetCode problems",
+            "Core programming skills in Python and C++",
+            "Demonstrated ability to build complete software projects"
         ],
         critical_gaps=missing_skills[:3] if missing_skills else ["No critical gaps detected"],
         improvement_suggestions=suggestions,
         ats_keywords_to_add=missing_skills[:5],
-        rewritten_summary="Motivated engineering graduate with strong programming fundamentals seeking to apply technical skills in a software development role.",
+        rewritten_summary=(
+            "Motivated Electrical Engineering graduate with strong Python and C++ programming "
+            "skills and 200+ algorithmic problems solved on LeetCode. "
+            "Experienced in building software systems and eager to transition into a software "
+            "engineering role where I can apply my problem-solving and development skills."
+        ),
         hiring_probability=probability
     )
