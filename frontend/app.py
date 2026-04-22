@@ -1,6 +1,5 @@
 import streamlit as st
 import requests
-import json
 
 # ── Page Configuration ────────────────────────────────────────
 st.set_page_config(
@@ -24,49 +23,190 @@ st.markdown("""
         border-radius: 10px;
         margin-bottom: 2rem;
     }
-    .score-box {
-        text-align: center;
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin: 0.5rem 0;
-    }
-    .grade-A { background-color: #d4edda; border: 2px solid #28a745; }
-    .grade-B { background-color: #cce5ff; border: 2px solid #004085; }
-    .grade-C { background-color: #fff3cd; border: 2px solid #856404; }
-    .grade-D { background-color: #f8d7da; border: 2px solid #721c24; }
-    .grade-F { background-color: #f8d7da; border: 2px solid #491217; }
-    .skill-match { 
-        background-color: #d4edda; 
-        padding: 0.3rem 0.6rem; 
-        border-radius: 15px; 
+    .skill-match {
+        background-color: #d4edda;
+        padding: 0.3rem 0.6rem;
+        border-radius: 15px;
         margin: 0.2rem;
         display: inline-block;
         font-size: 0.85rem;
         color: #155724;
     }
-    .skill-missing { 
-        background-color: #f8d7da; 
-        padding: 0.3rem 0.6rem; 
-        border-radius: 15px; 
+    .skill-missing {
+        background-color: #f8d7da;
+        padding: 0.3rem 0.6rem;
+        border-radius: 15px;
         margin: 0.2rem;
         display: inline-block;
         font-size: 0.85rem;
         color: #721c24;
     }
-    .skill-extra { 
-        background-color: #cce5ff; 
-        padding: 0.3rem 0.6rem; 
-        border-radius: 15px; 
+    .skill-extra {
+        background-color: #cce5ff;
+        padding: 0.3rem 0.6rem;
+        border-radius: 15px;
         margin: 0.2rem;
         display: inline-block;
         font-size: 0.85rem;
         color: #004085;
     }
-    .suggestion-high { border-left: 4px solid #dc3545; padding: 0.8rem; margin: 0.5rem 0; background: #fff5f5; border-radius: 0 8px 8px 0; }
-    .suggestion-medium { border-left: 4px solid #ffc107; padding: 0.8rem; margin: 0.5rem 0; background: #fffdf0; border-radius: 0 8px 8px 0; }
-    .suggestion-low { border-left: 4px solid #28a745; padding: 0.8rem; margin: 0.5rem 0; background: #f0fff4; border-radius: 0 8px 8px 0; }
+    .suggestion-high {
+        border-left: 4px solid #dc3545;
+        padding: 0.8rem;
+        margin: 0.5rem 0;
+        background: #fff5f5;
+        border-radius: 0 8px 8px 0;
+    }
+    .suggestion-medium {
+        border-left: 4px solid #ffc107;
+        padding: 0.8rem;
+        margin: 0.5rem 0;
+        background: #fffdf0;
+        border-radius: 0 8px 8px 0;
+    }
+    .suggestion-low {
+        border-left: 4px solid #28a745;
+        padding: 0.8rem;
+        margin: 0.5rem 0;
+        background: #f0fff4;
+        border-radius: 0 8px 8px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+
+# ── display_results DEFINED FIRST ─────────────────────────────
+def display_results(data: dict):
+    """Render all analysis results in a clean, organized layout."""
+
+    st.header("📊 Analysis Results")
+
+    final = data["final_score"]
+    grade = final["grade"]
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            label="Overall Score",
+            value=f"{final['final_score']}/100"
+        )
+    with col2:
+        st.metric(
+            label="Grade",
+            value=f"{grade} — {final['label']}"
+        )
+    with col3:
+        st.metric(
+            label="Keyword Match",
+            value=f"{data['skill_comparison']['match_percentage']}%"
+        )
+    with col4:
+        st.metric(
+            label="Semantic Match",
+            value=f"{round(data['semantic_score'] * 100, 1)}%"
+        )
+
+    st.progress(float(final["final_score"]) / 100)
+    st.markdown("---")
+
+    left, right = st.columns([1, 1], gap="large")
+
+    with left:
+        st.subheader("🎯 Skill Analysis")
+
+        matched = data["skill_comparison"]["matched_skills"]
+        missing = data["skill_comparison"]["missing_skills"]
+        extra = data["skill_comparison"]["extra_skills"]
+
+        if matched:
+            st.markdown("**✅ Skills matched with JD:**")
+            skills_html = " ".join([
+                f'<span class="skill-match">{s}</span>' for s in matched
+            ])
+            st.markdown(skills_html, unsafe_allow_html=True)
+
+        if missing:
+            st.markdown("**❌ Skills missing from resume:**")
+            skills_html = " ".join([
+                f'<span class="skill-missing">{s}</span>' for s in missing
+            ])
+            st.markdown(skills_html, unsafe_allow_html=True)
+
+        if extra:
+            st.markdown("**➕ Additional skills you have:**")
+            skills_html = " ".join([
+                f'<span class="skill-extra">{s}</span>' for s in extra
+            ])
+            st.markdown(skills_html, unsafe_allow_html=True)
+
+        st.markdown("---")
+        st.subheader("📑 Section Relevance")
+        section_scores = data["section_scores"]
+        for section, score in sorted(
+            section_scores.items(), key=lambda x: x[1], reverse=True
+        ):
+            st.markdown(f"**{section.title()}**")
+            st.progress(float(score), text=f"{round(score * 100, 1)}%")
+
+    with right:
+        llm = data["llm_analysis"]
+
+        st.subheader("🤖 AI Assessment")
+
+        prob = llm["hiring_probability"].upper()
+        prob_icon = {"HIGH": "🟢", "MEDIUM": "🟡", "LOW": "🔴"}.get(prob, "⚪")
+        st.markdown(f"**Shortlisting Probability:** {prob_icon} {prob}")
+
+        st.info(llm["overall_assessment"])
+
+        st.markdown("**💪 Your Strengths:**")
+        for strength in llm["top_strengths"]:
+            st.markdown(f"✅ {strength}")
+
+        if llm["critical_gaps"] and llm["critical_gaps"] != ["No critical gaps detected"]:
+            st.markdown("**⚠️ Critical Gaps:**")
+            for gap in llm["critical_gaps"]:
+                st.markdown(f"❌ {gap}")
+
+        st.markdown("---")
+        st.subheader("💡 Improvement Suggestions")
+
+        for suggestion in llm["improvement_suggestions"]:
+            priority = suggestion["priority"].lower()
+            css_class = f"suggestion-{priority}"
+            priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(priority, "⚪")
+            st.markdown(f"""
+<div class="{css_class}">
+    <strong>{priority_icon} {suggestion['section']}</strong><br>
+    <em>Issue:</em> {suggestion['issue']}<br>
+    <em>Fix:</em> {suggestion['suggestion']}
+</div>
+""", unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    st.subheader("🔍 ATS Keywords to Add")
+    if llm["ats_keywords_to_add"]:
+        keywords_html = " ".join([
+            f'<span class="skill-missing">{kw}</span>'
+            for kw in llm["ats_keywords_to_add"]
+        ])
+        st.markdown(keywords_html, unsafe_allow_html=True)
+        st.caption("Add these exact keywords to your resume to pass ATS filters")
+    else:
+        st.success("✅ Your resume contains the key ATS keywords for this role")
+
+    st.markdown("---")
+
+    st.subheader("✍️ AI-Suggested Professional Summary")
+    st.markdown(f"> {llm['rewritten_summary']}")
+    st.caption("Copy and customize this for your resume")
+
+    st.markdown("---")
+
+    with st.expander("🔧 View Raw JSON Response"):
+        st.json(data)
 
 
 # ── Header ────────────────────────────────────────────────────
@@ -120,14 +260,19 @@ elif len(job_description.strip()) < 50:
     st.warning("⚠️ Please paste a job description (minimum 50 characters)")
 
 
-# ── Analysis Results ──────────────────────────────────────────
+# ── Run Analysis ──────────────────────────────────────────────
 if analyze_clicked:
     with st.spinner("🤖 Analyzing your resume... This takes 15-30 seconds"):
         try:
-            # Call the FastAPI backend
             response = requests.post(
                 f"{API_URL}/analyze",
-                files={"resume": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")},
+                files={
+                    "resume": (
+                        uploaded_file.name,
+                        uploaded_file.getvalue(),
+                        "application/pdf"
+                    )
+                },
                 data={"job_description": job_description},
                 timeout=120
             )
@@ -142,152 +287,11 @@ if analyze_clicked:
                 st.error(f"❌ Analysis failed: {error_detail}")
 
         except requests.exceptions.ConnectionError:
-            st.error("❌ Cannot connect to backend. Make sure the FastAPI server is running on port 8080.")
+            st.error(
+                "❌ Cannot connect to backend. "
+                "Make sure the FastAPI server is running on port 8080."
+            )
         except requests.exceptions.Timeout:
-            st.error("❌ Request timed out. The analysis took too long. Please try again.")
+            st.error("❌ Request timed out. Please try again.")
         except Exception as e:
             st.error(f"❌ Unexpected error: {str(e)}")
-
-
-def display_results(data: dict):
-    """Render all analysis results in a clean, organized layout."""
-
-    # ── Score Overview ────────────────────────────────────────
-    st.header("📊 Analysis Results")
-
-    final = data["final_score"]
-    grade = final["grade"]
-    grade_class = f"grade-{grade}"
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric(
-            label="Overall Score",
-            value=f"{final['final_score']}/100",
-            help="Combined keyword + semantic + section score"
-        )
-    with col2:
-        st.metric(
-            label="Grade",
-            value=f"{grade} — {final['label']}"
-        )
-    with col3:
-        st.metric(
-            label="Keyword Match",
-            value=f"{data['skill_comparison']['match_percentage']}%",
-            help="% of JD skills found in resume"
-        )
-    with col4:
-        st.metric(
-            label="Semantic Match",
-            value=f"{round(data['semantic_score'] * 100, 1)}%",
-            help="Overall meaning-based similarity"
-        )
-
-    # Score bar
-    st.progress(final["final_score"] / 100)
-
-    st.markdown("---")
-
-    # ── Two Column Layout for Main Content ────────────────────
-    left, right = st.columns([1, 1], gap="large")
-
-    with left:
-        # Skills Analysis
-        st.subheader("🎯 Skill Analysis")
-
-        matched = data["skill_comparison"]["matched_skills"]
-        missing = data["skill_comparison"]["missing_skills"]
-        extra = data["skill_comparison"]["extra_skills"]
-
-        if matched:
-            st.markdown("**✅ Skills you have (matched JD):**")
-            skills_html = " ".join([f'<span class="skill-match">{s}</span>' for s in matched])
-            st.markdown(skills_html, unsafe_allow_html=True)
-
-        if missing:
-            st.markdown("**❌ Skills missing from your resume:**")
-            skills_html = " ".join([f'<span class="skill-missing">{s}</span>' for s in missing])
-            st.markdown(skills_html, unsafe_allow_html=True)
-
-        if extra:
-            st.markdown("**➕ Additional skills you have:**")
-            skills_html = " ".join([f'<span class="skill-extra">{s}</span>' for s in extra])
-            st.markdown(skills_html, unsafe_allow_html=True)
-
-        st.markdown("---")
-
-        # Section Scores
-        st.subheader("📑 Section Relevance")
-        section_scores = data["section_scores"]
-        for section, score in sorted(section_scores.items(), key=lambda x: x[1], reverse=True):
-            st.markdown(f"**{section.title()}**")
-            st.progress(score, text=f"{round(score * 100, 1)}%")
-
-    with right:
-        # LLM Analysis
-        llm = data["llm_analysis"]
-
-        st.subheader("🤖 AI Assessment")
-
-        # Hiring probability badge
-        prob = llm["hiring_probability"].upper()
-        prob_color = {"HIGH": "🟢", "MEDIUM": "🟡", "LOW": "🔴"}.get(prob, "⚪")
-        st.markdown(f"**Shortlisting Probability:** {prob_color} {prob}")
-
-        st.info(llm["overall_assessment"])
-
-        # Strengths
-        st.markdown("**💪 Your Strengths:**")
-        for strength in llm["top_strengths"]:
-            st.markdown(f"✅ {strength}")
-
-        # Critical Gaps
-        if llm["critical_gaps"] and llm["critical_gaps"] != ["No critical gaps detected"]:
-            st.markdown("**⚠️ Critical Gaps:**")
-            for gap in llm["critical_gaps"]:
-                st.markdown(f"❌ {gap}")
-
-        st.markdown("---")
-
-        # Improvement Suggestions
-        st.subheader("💡 Improvement Suggestions")
-        for suggestion in llm["improvement_suggestions"]:
-            priority = suggestion["priority"].lower()
-            css_class = f"suggestion-{priority}"
-            priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(priority, "⚪")
-            st.markdown(f"""
-<div class="{css_class}">
-    <strong>{priority_icon} {suggestion['section']}</strong><br>
-    <em>Issue:</em> {suggestion['issue']}<br>
-    <em>Fix:</em> {suggestion['suggestion']}
-</div>
-""", unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    # ── ATS Keywords ──────────────────────────────────────────
-    st.subheader("🔍 ATS Keywords to Add")
-    if llm["ats_keywords_to_add"]:
-        keywords_html = " ".join([
-            f'<span class="skill-missing">{kw}</span>'
-            for kw in llm["ats_keywords_to_add"]
-        ])
-        st.markdown(keywords_html, unsafe_allow_html=True)
-        st.caption("Add these exact keywords to your resume to pass ATS filters")
-    else:
-        st.success("✅ Your resume contains the key ATS keywords for this role")
-
-    st.markdown("---")
-
-    # ── Rewritten Summary ─────────────────────────────────────
-    st.subheader("✍️ AI-Suggested Professional Summary")
-    st.markdown(f"> {llm['rewritten_summary']}")
-    st.caption("Copy and customize this summary for your resume")
-
-    st.markdown("---")
-
-    # ── Raw Data Expander ─────────────────────────────────────
-    with st.expander("🔧 View Raw JSON Response"):
-        st.json(data)
