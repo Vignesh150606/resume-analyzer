@@ -1,13 +1,18 @@
 import sys
 sys.path.insert(0, ".")
 
-from backend.core.pdf_parser import extract_text_from_pdf
-from backend.core.extractor import extract_skills, compare_skills, extract_experience_years
+from backend.core.pdf_parser import extract_text_from_pdf, extract_sections
+from backend.core.extractor import extract_skills, compare_skills
+from backend.core.similarity import (
+    compute_overall_semantic_score,
+    compute_section_similarities,
+    compute_skill_gap_embeddings,
+    compute_final_score
+)
+from backend.core.llm_analyzer import analyze_with_llm
 
-# Sample job description for testing
 SAMPLE_JD = """
 We are looking for a Python Backend Developer.
-
 Requirements:
 - 1-2 years of experience with Python and FastAPI or Django
 - Strong knowledge of SQL and PostgreSQL
@@ -15,47 +20,64 @@ Requirements:
 - Familiarity with Docker and AWS is a plus
 - Understanding of Data Structures and Algorithms
 - Knowledge of Machine Learning or NLP is a bonus
-
 Education: B.Tech or B.E in any engineering discipline
 """
 
-def test_extractor():
-    print("=" * 60)
-    print("TEST 1: Extract skills from YOUR resume")
-    print("=" * 60)
+def test_full_pipeline():
+    print("Running full pipeline test...\n")
 
+    # Step 1: Parse PDF
     result = extract_text_from_pdf("sample_data/sample_resume.pdf")
-    resume_skills = extract_skills(result["full_text"])
+    resume_text = result["full_text"]
+    sections = extract_sections(resume_text)
 
-    print(f"Total skills found in resume: {resume_skills['skill_count']}")
-    print(f"All skills: {resume_skills['all_skills']}")
-    print(f"\nBy category:")
-    for cat, skills in resume_skills["by_category"].items():
-        print(f"  {cat}: {skills}")
-
-    print("\n")
-    print("=" * 60)
-    print("TEST 2: Extract skills from Job Description")
-    print("=" * 60)
-
+    # Step 2: Extract skills
+    resume_skills = extract_skills(resume_text)
     jd_skills = extract_skills(SAMPLE_JD)
-    print(f"Total skills in JD: {jd_skills['skill_count']}")
-    print(f"JD requires: {jd_skills['all_skills']}")
-
-    exp_years = extract_experience_years(SAMPLE_JD)
-    print(f"Experience required: {exp_years} years")
-
-    print("\n")
-    print("=" * 60)
-    print("TEST 3: Compare resume vs JD")
-    print("=" * 60)
-
     comparison = compare_skills(resume_skills, jd_skills)
-    print(f"Match percentage : {comparison['match_percentage']}%")
-    print(f"Matched skills   : {comparison['matched_skills']}")
-    print(f"Missing skills   : {comparison['missing_skills']}")
-    print(f"Extra skills     : {comparison['extra_skills']}")
+
+    # Step 3: Similarity
+    semantic_score = compute_overall_semantic_score(resume_text, SAMPLE_JD)
+    section_scores = compute_section_similarities(sections, SAMPLE_JD)
+    final = compute_final_score(
+        keyword_match_pct=comparison["match_percentage"],
+        semantic_score=semantic_score,
+        section_scores=section_scores
+    )
+
+    print(f"Keyword match : {comparison['match_percentage']}%")
+    print(f"Semantic score: {semantic_score}")
+    print(f"Final score   : {final['final_score']} — {final['label']}")
+    print(f"Missing skills: {comparison['missing_skills']}")
+
+    # Step 4: LLM Analysis
+    print("\nCalling Gemini API...")
+    analysis = analyze_with_llm(
+        resume_text=resume_text,
+        jd_text=SAMPLE_JD,
+        matched_skills=comparison["matched_skills"],
+        missing_skills=comparison["missing_skills"],
+        semantic_score=semantic_score,
+        keyword_match_pct=comparison["match_percentage"],
+        final_score=final["final_score"]
+    )
+
+    print("\n" + "=" * 60)
+    print("GEMINI ANALYSIS RESULT")
+    print("=" * 60)
+    print(f"\nOverall Assessment:\n{analysis.overall_assessment}")
+    print(f"\nTop Strengths:")
+    for s in analysis.top_strengths:
+        print(f"  + {s}")
+    print(f"\nCritical Gaps:")
+    for g in analysis.critical_gaps:
+        print(f"  - {g}")
+    print(f"\nImprovement Suggestions:")
+    for imp in analysis.improvement_suggestions:
+        print(f"  [{imp.priority.upper()}] {imp.section}: {imp.suggestion}")
+    print(f"\nATS Keywords to Add: {analysis.ats_keywords_to_add}")
+    print(f"\nRewritten Summary:\n{analysis.rewritten_summary}")
+    print(f"\nHiring Probability: {analysis.hiring_probability.upper()}")
 
 if __name__ == "__main__":
-    test_extractor()
-    
+    test_full_pipeline()
